@@ -1,11 +1,12 @@
 import qrcode = require('qrcode-terminal');
 import whatsapp = require('whatsapp-web.js');
-import gemini = require('../3-processamento/gemini');
+import gemini = require('../ia/gemini');
 import dotenv = require('dotenv');
 
 dotenv.config();
 
 const { Client, LocalAuth } = whatsapp;
+const { processarMensagemComIA, compilarPrompt } = gemini;
 
 const NUMERO_PERMITIDO = (process.env.WHATSAPP_NUMERO_PERMITIDO || '').replace(/\D/g, '');
 
@@ -15,18 +16,18 @@ function handleQrCode(qr: string): void {
 }
 
 function normalizarNumero(numero: string): string {
-    return numero.replace(/\D/g, '').slice(-11); 
+    return numero.replace(/\D/g, '').slice(-11);
 }
 
 function ehNumeroPermitido(numeroWhatsapp: string): boolean {
     const normalizado = normalizarNumero(numeroWhatsapp);
     const permitido = normalizarNumero(NUMERO_PERMITIDO);
-    
+
     return normalizado === permitido || normalizado.slice(-10) === permitido.slice(-10);
 }
 
 async function handleMessage(client: whatsapp.Client, message: whatsapp.Message): Promise<void> {
-    
+
     if (message.fromMe) {
         return;
     }
@@ -49,7 +50,7 @@ async function handleMessage(client: whatsapp.Client, message: whatsapp.Message)
         try {
             const contato = await client.getContactById(idConversa);
             if (contato && contato.number) {
-                idConversa = contato.number; 
+                idConversa = contato.number;
                 console.log(`[RADAR] 🕵️ @lid traduzido com sucesso para o número: ${idConversa}`);
             }
         } catch (erro) {
@@ -72,13 +73,16 @@ async function handleMessage(client: whatsapp.Client, message: whatsapp.Message)
     console.log(`✅ SUCESSO! Passou nos filtros. IA processando: "${texto}"`);
 
     try {
-        const resposta = await gemini.processarMensagemComIA(texto);
+        // TODO: Buscar prompt_base da clínica do banco de dados
+        // Por enquanto usa um prompt padrão
+        const promptPadrao = `Você é uma secretária virtual de clínica de estética. Responda de forma simpática e profissional.`;
+        const resposta = await processarMensagemComIA(idConversa, texto, promptPadrao);
         await message.reply(resposta);
     } catch (err: any) {
         console.error('--- ERRO DA IA ---');
         console.error(err.message);
         console.error('-----------------');
-        
+
         if (!message.fromMe) {
             await message.reply('Não consegui responder agora. Por favor, tente de novo em alguns instantes.');
         }

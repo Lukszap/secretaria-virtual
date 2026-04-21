@@ -13,6 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.49.4",
     "dotenv": "^17.4.2",
     "patch-package": "^8.0.1",
     "puppeteer": "^24.41.0",

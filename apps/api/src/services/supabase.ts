@@ -1,14 +1,12 @@
-import supabaseJs = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error('SUPABASE_URL ou SUPABASE_KEY não definidos no .env');
+// Cliente Supabase - criado dinamicamente com credenciais do contexto
+function createSupabaseClient(supabaseUrl: string, supabaseKey: string): any {
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('SUPABASE_URL ou SUPABASE_KEY não fornecidos');
+  }
+  return createClient(supabaseUrl, supabaseKey);
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const supabase: any = supabaseJs.createClient(supabaseUrl, supabaseKey);
 
 interface Clinica {
   id: string;
@@ -28,7 +26,8 @@ interface ConversaDB {
   created_at?: string;
 }
 
-async function listarClinicas(): Promise<Clinica[]> {
+async function listarClinicas(supabaseUrl: string, supabaseKey: string): Promise<Clinica[]> {
+  const supabase = createSupabaseClient(supabaseUrl, supabaseKey);
   const { data, error } = await supabase
     .from('clinicas')
     .select('id, nome, prompt_base, perfil_negociacao, whatsapp_id, created_at');
@@ -41,7 +40,8 @@ async function listarClinicas(): Promise<Clinica[]> {
   return data || [];
 }
 
-async function buscarClinicaPorId(id: string): Promise<Clinica | null> {
+async function buscarClinicaPorId(id: string, supabaseUrl: string, supabaseKey: string): Promise<Clinica | null> {
+  const supabase = createSupabaseClient(supabaseUrl, supabaseKey);
   const { data, error } = await supabase
     .from('clinicas')
     .select('id, nome, prompt_base, perfil_negociacao, whatsapp_id, created_at')
@@ -56,7 +56,8 @@ async function buscarClinicaPorId(id: string): Promise<Clinica | null> {
   return data;
 }
 
-async function criarClinica(nome: string, promptBase: string, perfilNegociacao: string): Promise<string | null> {
+async function criarClinica(nome: string, promptBase: string, perfilNegociacao: string, supabaseUrl: string, supabaseKey: string): Promise<string | null> {
+  const supabase = createSupabaseClient(supabaseUrl, supabaseKey);
   const { data, error } = await supabase
     .from('clinicas')
     .insert({
@@ -75,7 +76,8 @@ async function criarClinica(nome: string, promptBase: string, perfilNegociacao: 
   return data?.id || null;
 }
 
-async function buscarHistoricoConversa(clienteWaId: string, clinicaId: string): Promise<ConversaDB[]> {
+async function buscarHistoricoConversa(clienteWaId: string, clinicaId: string, supabaseUrl: string, supabaseKey: string): Promise<ConversaDB[]> {
+  const supabase = createSupabaseClient(supabaseUrl, supabaseKey);
   const { data, error } = await supabase
     .from('conversas')
     .select('id, cliente_wa_id, clinica_id, role, content, created_at')
@@ -91,7 +93,8 @@ async function buscarHistoricoConversa(clienteWaId: string, clinicaId: string): 
   return data || [];
 }
 
-async function salvarMensagem(clienteWaId: string, clinicaId: string, role: 'user' | 'model', content: string): Promise<void> {
+async function salvarMensagem(clienteWaId: string, clinicaId: string, role: 'user' | 'model', content: string, supabaseUrl: string, supabaseKey: string): Promise<void> {
+  const supabase = createSupabaseClient(supabaseUrl, supabaseKey);
   const { error } = await supabase
     .from('conversas')
     .insert({
@@ -106,8 +109,8 @@ async function salvarMensagem(clienteWaId: string, clinicaId: string, role: 'use
   }
 }
 
-export = {
-  supabase,
+export {
+  createSupabaseClient,
   listarClinicas,
   buscarClinicaPorId,
   criarClinica,

@@ -1,9 +1,4 @@
-import dotenv = require('dotenv');
-import genai = require('@google/generative-ai');
-
-const { GoogleGenerativeAI } = genai;
-
-dotenv.config();
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface ConfigClinica {
   nomeClinica: string;
@@ -107,16 +102,15 @@ Após cliente confirmar interesse em um serviço, mas ANTES de fechar o horário
 
 const sessoesChat = new Map<string, any>();
 
-function obterOuCriarChat(idConversa: string, systemInstruction: string): any {
+function obterOuCriarChat(idConversa: string, systemInstruction: string, apiKey: string): any {
   const chave = `${idConversa}:${systemInstruction.slice(0, 50)}`;
 
   if (sessoesChat.has(chave)) {
     return sessoesChat.get(chave);
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY não está definida no ambiente.');
+    throw new Error('GEMINI_API_KEY não fornecida.');
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -138,13 +132,14 @@ async function processarMensagemComIA(
   idConversa: string,
   mensagemCliente: string,
   systemInstruction: string,
+  apiKey: string,
 ): Promise<string> {
-  const chat = obterOuCriarChat(idConversa, systemInstruction);
+  const chat = obterOuCriarChat(idConversa, systemInstruction, apiKey);
   const result = await chat.sendMessage(mensagemCliente);
   return result.response.text();
 }
 
-export = {
+export {
   compilarPrompt,
   processarMensagemComIA,
 };

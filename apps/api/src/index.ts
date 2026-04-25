@@ -1,41 +1,44 @@
-import express = require('express');
-import dotenv = require('dotenv');
+import { Hono } from 'hono';
+import { logger } from 'hono/logger';
+import { cors } from 'hono/cors';
 
-// Tipos do Express
-import type { Request, Response } from 'express';
+// Importação das rotas
+import webhookRoutes from './routes/webhook.js';
 
-dotenv.config();
+// Tipos de ambiente do Cloudflare Workers
+type Bindings = {
+  META_VERIFY_TOKEN: string;
+  GEMINI_API_KEY: string;
+  SUPABASE_URL: string;
+  SUPABASE_KEY: string;
+  WHATSAPP_ACCESS_TOKEN?: string;
+  PHONE_NUMBER_ID?: string;
+};
 
-const app = express();
-app.use(express.json());
+const app = new Hono<{ Bindings: Bindings }>();
 
-const PORT = process.env.PORT || 3000;
+// Middlewares globais
+app.use(logger());
+app.use(cors());
 
 // Health check
-app.get('/', (_req: Request, res: Response) => {
-  res.json({ status: 'OK', service: 'secretaria-virtual-api' });
+app.get('/', (c) => {
+  return c.json({
+    status: 'OK',
+    service: 'secretaria-virtual-api',
+    version: '1.0.0',
+    platform: 'Cloudflare Workers',
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// Webhook para receber mensagens (Meta WhatsApp API)
-app.post('/webhook', (req: Request, res: Response) => {
-  console.log('📩 Webhook recebido:', req.body);
-  res.sendStatus(200);
+// Rotas do Webhook (Meta WhatsApp API)
+app.route('/webhook', webhookRoutes);
+
+// Tratamento de rotas não encontradas
+app.notFound((c) => {
+  return c.json({ error: 'Rota não encontrada' }, 404);
 });
 
-// Verificação do webhook (Meta)
-app.get('/webhook', (req: Request, res: Response) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
-    console.log('✅ Webhook verificado');
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 API rodando na porta ${PORT}`);
-});
+// Export padrão para Cloudflare Workers
+export default app;

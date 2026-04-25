@@ -1,0 +1,15 @@
+# Cloudflare Workers configuration for Secretaria Virtual API
+name = "secretaria-virtual-api"
+main = "apps/api/src/index.ts"
+compatibility_date = "2024-12-18"
+
+# Node.js compatibility (required for @supabase/supabase-js)
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Variáveis públicas (não secretas) podem ir aqui
+# META_VERIFY_TOKEN e outras secrets devem ser configuradas via:
+# wrangler secret put META_VERIFY_TOKEN
+
+# [env.production]
+# name = "secretaria-virtual-api-prod"

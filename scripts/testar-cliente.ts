@@ -66,7 +66,7 @@ async function iniciarChat(clinica: Clinica, clienteWaId: string, ehNovo: boolea
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash-lite',
+    model: 'gemini-1.5-flash',
     generationConfig: { temperature: 0.2 },
     systemInstruction: clinica.prompt_base,
   });
@@ -81,7 +81,7 @@ async function iniciarChat(clinica: Clinica, clienteWaId: string, ehNovo: boolea
     try {
       const result = await chat.sendMessage('Olá! Sou um novo cliente interessado nos serviços.');
       const resposta = result.response.text();
-      await salvarMensagem(clienteWaId, clinica.id, 'model', resposta);
+      await salvarMensagem(clienteWaId, clinica.id, 'model', resposta, process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
       console.log(`🤖 Secretária: ${resposta}\n`);
     } catch (erro) {
       console.error('❌ Erro na saudação:', erro);

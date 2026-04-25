@@ -1,14 +1,10 @@
-import readline = require('readline');
-import dotenv = require('dotenv');
-import genai = require('@google/generative-ai');
-import gemini = require('../src/ia/gemini');
-import db = require('../src/db/supabase');
-const { compilarPrompt } = gemini;
-const { criarClinica, buscarHistoricoConversa, salvarMensagem } = db;
+import readline from 'readline';
+import { config } from 'dotenv';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { compilarPrompt } from '../apps/api/src/services/gemini.js';
+import { criarClinica, buscarHistoricoConversa, salvarMensagem } from '../apps/api/src/services/supabase.js';
 
-dotenv.config();
-
-const { GoogleGenerativeAI } = genai;
+config();
 
 interface ConfigClinica {
   nomeClinica: string;
@@ -90,14 +86,18 @@ async function faseTeste(systemInstruction: string, clinicaId: string): Promise<
   console.log('✅ Bot configurado! Digite como se fosse um cliente testando a clínica (ou digite "sair"):\n');
 
   // Buscar histórico anterior (se existir)
-  const historico = await buscarHistoricoConversa(CLIENTE_TESTE_ID, clinicaId);
+  const historico = await buscarHistoricoConversa(
+    CLIENTE_TESTE_ID,
+    clinicaId,
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_KEY!
+  );
   if (historico.length > 0) {
     console.log(`📝 Carregadas ${historico.length} mensagens do histórico\n`);
   }
 
   // Preparar histórico para o Gemini
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const history: any[] = historico.map((msg) => ({
+  const history = historico.map((msg: { role: string; content: string }) => ({
     role: msg.role,
     parts: [{ text: msg.content }],
   }));
@@ -110,13 +110,13 @@ async function faseTeste(systemInstruction: string, clinicaId: string): Promise<
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash-lite',
+    model: 'gemini-1.5-flash',
     generationConfig: { temperature: 0.2 },
     systemInstruction,
   });
 
   // Iniciar chat com histórico (se houver)
-  const chatParams = history.length > 0 ? { history } : {};
+  const chatParams = history.length > 0 ? { history } : undefined;
   const chat = model.startChat(chatParams);
 
   while (true) {
@@ -134,14 +134,14 @@ async function faseTeste(systemInstruction: string, clinicaId: string): Promise<
     try {
       // 1. Salvar mensagem do usuário
       console.log('⏳ digitando...');
-      await salvarMensagem(CLIENTE_TESTE_ID, clinicaId, 'user', texto);
+      await salvarMensagem(CLIENTE_TESTE_ID, clinicaId, 'user', texto, process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
 
       // 2. Enviar para Gemini
       const result = await chat.sendMessage(texto);
       const resposta = result.response.text();
 
       // 3. Salvar resposta da IA
-      await salvarMensagem(CLIENTE_TESTE_ID, clinicaId, 'model', resposta);
+      await salvarMensagem(CLIENTE_TESTE_ID, clinicaId, 'model', resposta, process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
 
       console.log(`\n🤖 Secretária: ${resposta}\n`);
     } catch (erro) {
@@ -158,7 +158,13 @@ async function main(): Promise<void> {
 
     // Salvar clínica no Supabase
     console.log('\n💾 Salvando clínica no banco de dados...');
-    const clinicaId = await criarClinica(config.nomeClinica, systemInstruction, config.perfilNegociacao);
+    const clinicaId = await criarClinica(
+      config.nomeClinica,
+      systemInstruction,
+      config.perfilNegociacao,
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_KEY!
+    );
 
     if (!clinicaId) {
       throw new Error('Falha ao salvar clínica no Supabase');

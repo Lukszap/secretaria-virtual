@@ -1,11 +1,9 @@
-import readline = require('readline');
-import dotenv = require('dotenv');
-import gemini = require('../src/ia/gemini');
-import db = require('../src/db/supabase');
-const { compilarPrompt } = gemini;
-const { criarClinica } = db;
+import readline from 'readline';
+import { config } from 'dotenv';
+import { compilarPrompt } from '../apps/api/src/services/gemini.js';
+import { criarClinica } from '../apps/api/src/services/supabase.js';
 
-dotenv.config();
+config();
 
 interface ConfigClinica {
   nomeClinica: string;
@@ -81,7 +79,13 @@ async function main(): Promise<void> {
 
     // Salvar clínica no Supabase
     console.log('\n💾 Salvando clínica no banco de dados...');
-    const clinicaId = await criarClinica(config.nomeClinica, systemInstruction, config.perfilNegociacao);
+    const clinicaId = await criarClinica(
+      config.nomeClinica,
+      systemInstruction,
+      config.perfilNegociacao,
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_KEY!
+    );
 
     if (!clinicaId) {
       throw new Error('Falha ao salvar clínica no Supabase');
@@ -94,7 +98,7 @@ async function main(): Promise<void> {
     console.log(`║  ID: ${clinicaId.padEnd(48)} ║`);
     console.log(`║  Perfil: ${config.perfilNegociacao.padEnd(44)} ║`);
     console.log('╚════════════════════════════════════════════════════════╝');
-    console.log('\n💡 Para testar esta clínica, rode: npx ts-node scripts/testar-cliente.ts');
+    console.log('\n💡 Para testar esta clínica, rode: npm run test:cliente');
 
     rl.close();
     process.exit(0);

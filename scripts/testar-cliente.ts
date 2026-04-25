@@ -1,12 +1,9 @@
-import readline = require('readline');
-import dotenv = require('dotenv');
-import genai = require('@google/generative-ai');
-import db = require('../src/db/supabase');
+import readline from 'readline';
+import { config } from 'dotenv';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { listarClinicas, buscarHistoricoConversa, salvarMensagem } from '../apps/api/src/services/supabase.js';
 
-dotenv.config();
-
-const { listarClinicas, buscarHistoricoConversa, salvarMensagem } = db;
-const { GoogleGenerativeAI } = genai;
+config();
 
 interface Clinica {
   id: string;
@@ -34,7 +31,12 @@ async function iniciarChat(clinica: Clinica, clienteWaId: string, ehNovo: boolea
   console.log('╚════════════════════════════════════════════════════════╝\n');
 
   // Buscar histórico
-  const historico = await buscarHistoricoConversa(clienteWaId, clinica.id);
+  const historico = await buscarHistoricoConversa(
+    clienteWaId,
+    clinica.id,
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_KEY!
+  );
 
   if (historico.length > 0) {
     console.log(`📝 Histórico: ${historico.length} mensagens anteriores\n`);
@@ -101,12 +103,12 @@ async function iniciarChat(clinica: Clinica, clienteWaId: string, ehNovo: boolea
 
     try {
       console.log('⏳ digitando...');
-      await salvarMensagem(clienteWaId, clinica.id, 'user', texto);
+      await salvarMensagem(clienteWaId, clinica.id, 'user', texto, process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
 
       const result = await chat.sendMessage(texto);
       const resposta = result.response.text();
 
-      await salvarMensagem(clienteWaId, clinica.id, 'model', resposta);
+      await salvarMensagem(clienteWaId, clinica.id, 'model', resposta, process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
       console.log(`\n🤖 Secretária: ${resposta}\n`);
     } catch (erro) {
       console.error('\n❌ Erro:', erro instanceof Error ? erro.message : erro);
@@ -122,7 +124,7 @@ async function main(): Promise<void> {
     console.log('╚════════════════════════════════════════════════════════╝\n');
 
     // Listar clínicas disponíveis
-    const clinicas = await listarClinicas();
+    const clinicas = await listarClinicas(process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
     if (clinicas.length === 0) {
       console.log('❌ Nenhuma clínica encontrada. Rode o onboarding primeiro.');
       rl.close();

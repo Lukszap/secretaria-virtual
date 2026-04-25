@@ -4,9 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test:models": "npx ts-node --esm scripts/listar-modelos.ts",
+    "test:clinica": "npx ts-node --esm scripts/testar-clinica.ts",
+    "test:cliente": "npx ts-node --esm scripts/testar-cliente.ts",
+    "test:onboarding": "npx ts-node --esm scripts/onboarding.ts",
+    "test": "echo 'Use: npm run test:models | test:clinica | test:cliente | test:onboarding'"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +24,8 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",
     "@types/node": "^25.6.0",
+    "dotenv": "^17.4.2",
+    "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
     "wrangler": "^3.95.0"
   }

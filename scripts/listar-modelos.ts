@@ -1,12 +1,13 @@
-import dotenv = require('dotenv');
+import { config } from 'dotenv';
 
-dotenv.config();
+config();
 
 async function listarModelos(): Promise<void> {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    console.error('❌ GEMINI_API_KEY não definida no arquivo .env');
+    console.error('❌ GEMINI_API_KEY não definida no .dev.vars ou ambiente');
+    console.log('💡 Configure: npx wrangler secret put GEMINI_API_KEY');
     process.exit(1);
   }
 

@@ -1,73 +1,38 @@
 import readline from 'readline';
 import { config } from 'dotenv';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
+import { generateGeminiResponse } from '../apps/api/src/services/gemini-v2.js';
+import type { Tenant } from '../packages/shared/src/types.js';
 
 config({ path: '.dev.vars' });
 
-// Types
-interface Clinica {
-  id: string;
-  nome: string;
-  prompt_base: string;
+const env = process.env as unknown as { 
+  SUPABASE_URL: string; 
+  SUPABASE_KEY: string; 
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  GEMINI_API_KEY: string 
+};
+
+// Criar client Supabase com service role key (bypass RLS) ou anon key
+function createSupabaseClient(supabaseUrl: string, supabaseKey: string) {
+  const key = env.SUPABASE_SERVICE_ROLE_KEY || supabaseKey;
+  return createClient(supabaseUrl, key);
 }
 
-interface Conversa {
-  id: string;
-  cliente_wa_id: string;
-  clinica_id: string;
-  role: 'user' | 'model';
-  content: string;
-  created_at: string;
-}
-
-// Supabase functions (standalone)
-async function listarClinicas(supabaseUrl: string, supabaseKey: string): Promise<Clinica[]> {
-  const supabase = createClient(supabaseUrl, supabaseKey);
+// Listar tenants disponíveis
+async function listarTenants(supabaseUrl: string, supabaseKey: string): Promise<Tenant[]> {
+  const supabase = createSupabaseClient(supabaseUrl, supabaseKey);
   const { data, error } = await supabase
-    .from('empresas')
-    .select('id, nome, prompt_base')
+    .from('tenants')
+    .select('*')
     .eq('ativo', true);
 
   if (error) {
-    console.error('❌ Erro ao listar clínicas:', error.message);
+    console.error('❌ Erro ao listar tenants:', error.message);
     return [];
   }
 
-  return data || [];
-}
-
-async function buscarHistoricoConversa(clienteWaId: string, clinicaId: string, supabaseUrl: string, supabaseKey: string): Promise<Conversa[]> {
-  const supabase = createClient(supabaseUrl, supabaseKey);
-  const { data, error } = await supabase
-    .from('conversas')
-    .select('id, cliente_wa_id, clinica_id, role, content, created_at')
-    .eq('cliente_wa_id', clienteWaId)
-    .eq('clinica_id', clinicaId)
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    console.error('❌ Erro ao buscar histórico:', error.message);
-    return [];
-  }
-
-  return data || [];
-}
-
-async function salvarMensagem(clienteWaId: string, clinicaId: string, role: 'user' | 'model', content: string, supabaseUrl: string, supabaseKey: string): Promise<void> {
-  const supabase = createClient(supabaseUrl, supabaseKey);
-  const { error } = await supabase
-    .from('conversas')
-    .insert({
-      cliente_wa_id: clienteWaId,
-      clinica_id: clinicaId,
-      role,
-      content,
-    });
-
-  if (error) {
-    console.error('❌ Erro ao salvar mensagem:', error.message);
-  }
+  return (data as Tenant[]) || [];
 }
 
 const rl = readline.createInterface({
@@ -81,68 +46,70 @@ function perguntar(texto: string): Promise<string> {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function iniciarChat(clinica: Clinica, clienteWaId: string, ehNovo: boolean): Promise<void> {
+async function iniciarChat(tenant: Tenant, telefoneCliente: string, ehNovo: boolean): Promise<void> {
   console.clear();
   console.log('╔════════════════════════════════════════════════════════╗');
-  console.log(`║  🤖 CHAT - ${clinica.nome.padEnd(42)} ║`);
-  console.log(`║  Cliente: ${clienteWaId.substring(0, 25).padEnd(25)} ${ehNovo ? '(NOVO)' : '(EXISTENTE)'}      ║`);
+  console.log(`║  🤖 CHAT - ${tenant.nome.padEnd(42)} ║`);
+  console.log(`║  Cliente: ${telefoneCliente.substring(0, 25).padEnd(25)} ${ehNovo ? '(NOVO)' : '(EXISTENTE)'}      ║`);
   console.log('╚════════════════════════════════════════════════════════╝\n');
+  console.log('✅ Usando generateGeminiResponse do gemini-v2.ts\n');
 
-  // Buscar histórico
-  const historico = await buscarHistoricoConversa(
-    clienteWaId,
-    clinica.id,
-    process.env.SUPABASE_URL!,
-    process.env.SUPABASE_KEY!
-  );
+  const supabase = createSupabaseClient(env.SUPABASE_URL, env.SUPABASE_KEY);
 
-  if (historico.length > 0) {
-    console.log(`📝 Histórico: ${historico.length} mensagens anteriores\n`);
-    const ultimas = historico.slice(-4);
-    ultimas.forEach((msg: Conversa) => {
-      const prefixo = msg.role === 'user' ? '👤' : '🤖';
-      const texto = msg.content.substring(0, 60) + (msg.content.length > 60 ? '...' : '');
-      console.log(`${prefixo} ${texto}`);
-    });
-    console.log('────────────────────────────────────────\n');
-  } else if (!ehNovo) {
-    console.log('⚠️  Cliente marcado como existente, mas sem histórico encontrado\n');
+  // Criar cliente se for novo
+  if (ehNovo) {
+    const { data: existente } = await supabase
+      .from('clientes')
+      .select('*')
+      .eq('tenant_id', tenant.id)
+      .eq('telefone', telefoneCliente)
+      .single();
+
+    if (!existente) {
+      await supabase.from('clientes').insert({
+        tenant_id: tenant.id,
+        telefone: telefoneCliente,
+        nome: 'Cliente Teste',
+        preferencias: {},
+        historico_servicos: []
+      });
+      console.log('👤 Cliente criado no banco\n');
+    }
   }
 
-  // Preparar histórico para o Gemini
-  const history = historico.map((msg: Conversa) => ({
-    role: msg.role,
-    parts: [{ text: msg.content }],
-  }));
+  // Buscar histórico de mensagens
+  const { data: cliente } = await supabase
+    .from('clientes')
+    .select('id')
+    .eq('tenant_id', tenant.id)
+    .eq('telefone', telefoneCliente)
+    .single();
 
-  // Criar cliente Gemini
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY não definida');
-  }
+  if (cliente) {
+    const { data: conversa } = await supabase
+      .from('conversas')
+      .select('id')
+      .eq('tenant_id', tenant.id)
+      .eq('cliente_id', cliente.id)
+      .single();
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
-    generationConfig: { temperature: 0.2 },
-    systemInstruction: clinica.prompt_base,
-  });
+    if (conversa) {
+      const { data: mensagens } = await supabase
+        .from('mensagens')
+        .select('*')
+        .eq('conversa_id', conversa.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
 
-  // Iniciar chat com histórico (se houver)
-  const chatParams = history.length > 0 ? { history } : {};
-  const chat = model.startChat(chatParams);
-
-  // Se for novo e não tiver histórico, enviar saudação automática
-  if (ehNovo && historico.length === 0) {
-    console.log('🤖 Iniciando conversa com saudação...\n');
-    try {
-      const result = await chat.sendMessage('Olá! Sou um novo cliente interessado nos serviços.');
-      const resposta = result.response.text();
-      await salvarMensagem(clienteWaId, clinica.id, 'model', resposta, process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
-      console.log(`🤖 Secretária: ${resposta}\n`);
-    } catch (erro) {
-      console.error('❌ Erro na saudação:', erro);
+      if (mensagens && mensagens.length > 0) {
+        console.log(`📝 Histórico: ${mensagens.length} mensagens recentes\n`);
+        mensagens.reverse().forEach((msg) => {
+          const prefixo = msg.tipo === 'inbound' ? '👤' : '🤖';
+          const texto = msg.conteudo.substring(0, 60) + (msg.conteudo.length > 60 ? '...' : '');
+          console.log(`${prefixo} ${texto}`);
+        });
+        console.log('────────────────────────────────────────\n');
+      }
     }
   }
 
@@ -160,14 +127,23 @@ async function iniciarChat(clinica: Clinica, clienteWaId: string, ehNovo: boolea
     if (!texto) continue;
 
     try {
-      console.log('⏳ digitando...');
-      await salvarMensagem(clienteWaId, clinica.id, 'user', texto, process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
+      console.log('⏳ Processando...');
 
-      const result = await chat.sendMessage(texto);
-      const resposta = result.response.text();
+      const resposta = await generateGeminiResponse(
+        supabase,
+        env as unknown as import('../packages/shared/src/types.js').Env,
+        tenant.id,
+        telefoneCliente,
+        texto,
+        'Cliente Teste'
+      );
 
-      await salvarMensagem(clienteWaId, clinica.id, 'model', resposta, process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
-      console.log(`\n🤖 Secretária: ${resposta}\n`);
+      console.log(`\n🤖 Secretária: ${resposta.texto}\n`);
+
+      if (resposta.action) {
+        console.log(`⚡ Ação detectada: ${resposta.action.tipo}`);
+        console.log(`   Payload: ${JSON.stringify(resposta.action.payload)}\n`);
+      }
     } catch (erro) {
       console.error('\n❌ Erro:', erro instanceof Error ? erro.message : erro);
       console.log();
@@ -178,34 +154,34 @@ async function iniciarChat(clinica: Clinica, clienteWaId: string, ehNovo: boolea
 async function main(): Promise<void> {
   try {
     console.log('╔════════════════════════════════════════════════════════╗');
-    console.log('║  👤 TESTAR CLIENTE                                      ║');
+    console.log('║  👤 TESTAR CLIENTE - Gemini V2                         ║');
     console.log('╚════════════════════════════════════════════════════════╝\n');
 
-    // Listar clínicas disponíveis
-    const clinicas = await listarClinicas(process.env.SUPABASE_URL!, process.env.SUPABASE_KEY!);
-    if (clinicas.length === 0) {
-      console.log('❌ Nenhuma clínica encontrada. Rode o onboarding primeiro.');
+    // Listar tenants disponíveis
+    const tenants = await listarTenants(env.SUPABASE_URL, env.SUPABASE_KEY);
+    if (tenants.length === 0) {
+      console.log('❌ Nenhum tenant encontrado. Rode: npm run test:onboarding');
       rl.close();
       process.exit(1);
     }
 
-    console.log('Clínicas disponíveis:\n');
-    clinicas.forEach((c, i) => {
-      console.log(`  ${i + 1}. ${c.nome}`);
+    console.log('Tenants disponíveis:\n');
+    tenants.forEach((t: Tenant, i: number) => {
+      console.log(`  ${i + 1}. ${t.nome} (${t.configuracoes.catalogo_servicos.length} serviços)`);
     });
 
-    const escolha = await perguntar('\nEscolha a clínica (número): ');
+    const escolha = await perguntar('\nEscolha o tenant (número): ');
     const idx = parseInt(escolha) - 1;
 
-    if (idx < 0 || idx >= clinicas.length) {
+    if (idx < 0 || idx >= tenants.length) {
       console.log('❌ Escolha inválida');
       rl.close();
       process.exit(1);
     }
 
-    const clinica = clinicas[idx];
-    if (!clinica) {
-      console.log('❌ Erro ao selecionar clínica');
+    const tenant = tenants[idx];
+    if (!tenant) {
+      console.log('❌ Erro ao selecionar tenant');
       rl.close();
       process.exit(1);
     }
@@ -217,11 +193,11 @@ async function main(): Promise<void> {
     const tipoCliente = await perguntar('Escolha (1 ou 2): ');
     const ehNovo = tipoCliente === '1';
 
-    // ID do cliente
-    const clienteId = await perguntar('\n📱 ID do cliente (ex: 5533999999999 ou deixe em branco para padrão): ');
-    const clienteWaId = clienteId.trim() || (ehNovo ? 'cliente-novo-teste' : 'cliente-existente-teste');
+    // Telefone do cliente
+    const telefoneInput = await perguntar('\n📱 Telefone do cliente (ex: 5511999999999): ');
+    const telefone = telefoneInput.trim() || (ehNovo ? '5511999999991' : '5511999999992');
 
-    await iniciarChat(clinica, clienteWaId, ehNovo);
+    await iniciarChat(tenant, telefone, ehNovo);
   } catch (erro) {
     console.error('Erro fatal:', erro);
     rl.close();

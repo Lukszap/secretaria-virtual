@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test:models": "ts-node scripts/listar-modelos.ts",
-    "test:clinica": "ts-node scripts/testar-clinica.ts",
-    "test:cliente": "ts-node scripts/testar-cliente.ts",
-    "test:onboarding": "ts-node scripts/onboarding.ts",
+    "test:models": "node --loader ts-node/esm scripts/listar-modelos.ts",
+    "test:clinica": "node --loader ts-node/esm scripts/testar-clinica.ts",
+    "test:cliente": "node --loader ts-node/esm scripts/testar-cliente.ts",
+    "test:onboarding": "node --loader ts-node/esm scripts/onboarding.ts",
     "test": "echo 'Use: npm run test:models | test:clinica | test:cliente | test:onboarding'"
   },
   "keywords": [],

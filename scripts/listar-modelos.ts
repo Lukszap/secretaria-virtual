@@ -1,6 +1,6 @@
 import { config } from 'dotenv';
 
-config();
+config({ path: '.dev.vars' });
 
 interface Modelo {
   name: string;

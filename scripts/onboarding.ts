@@ -3,7 +3,7 @@ import { config } from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
 
-config();
+config({ path: '.dev.vars' });
 
 // Types
 interface ConfigClinica {

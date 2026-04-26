@@ -2,7 +2,7 @@ import readline from 'readline';
 import { config } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 
-config();
+config({ path: '.dev.vars' });
 
 // Types
 interface ConfigClinica {

@@ -1,11 +1,11 @@
 import readline from 'readline';
 import { config } from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { compilarPrompt } from '../apps/api/src/services/gemini.js';
-import { criarClinica, buscarHistoricoConversa, salvarMensagem } from '../apps/api/src/services/supabase.js';
+import { createClient } from '@supabase/supabase-js';
 
 config();
 
+// Types
 interface ConfigClinica {
   nomeClinica: string;
   enderecoHorario: string;
@@ -17,6 +17,134 @@ interface ConfigClinica {
   brindesDescontos: string;
   servicosComplementares: string;
   restricoesAgenda: string;
+}
+
+interface Conversa {
+  id: string;
+  cliente_wa_id: string;
+  clinica_id: string;
+  role: 'user' | 'model';
+  content: string;
+  created_at: string;
+}
+
+// Gemini functions (copiadas para standalone)
+function getRegrasNegociacao(perfil: string, brindes: string): string {
+  if (perfil === 'Equilibrado') {
+    return `
+⚖️ NÍVEL DE NEGOCIAÇÃO - EQUILIBRADO:
+- NO PRIMEIRO pedido de desconto: NEGUE educadamente.
+- Frase: "Entendo, mas esse valor já reflete nossa qualidade premium."
+- SÓ cede na SEGUNDA insistência, com ${brindes}.
+- Frase mágica: "Vejo que você gostou! Tenho uma condição especial: ${brindes}. Posso garantir isso agora?"`;
+  } else if (perfil === 'Duro') {
+    return `
+🛡️ NÍVEL DE NEGOCIAÇÃO - DURO:
+- NUNCA dê desconto direto.
+- SEMPRE consulte a "gerência".
+- Frase: "Vou verificar com minha gerente o que posso fazer especial para você."
+- Máximo: ${brindes} como cortesia, nunca desconto em dinheiro.`;
+  } else {
+    return `
+🎁 NÍVEL DE NEGOCIAÇÃO - FÁCIL:
+- Ofereça ${brindes} DE CARA, sem esperar pedido.
+- Frase: "Gostei do seu interesse! Já vou incluir ${brindes} para você!"
+- Dê desconto de 5% se insistir.`;
+  }
+}
+
+function compilarPrompt(config: ConfigClinica): string {
+  const regrasNegociacao = getRegrasNegociacao(config.perfilNegociacao, config.brindesDescontos);
+
+  return `
+Você é a secretária virtual da ${config.nomeClinica}.
+
+📍 LOCAL E HORÁRIO:
+${config.enderecoHorario}
+
+💰 SERVIÇOS E PREÇOS:
+${config.servicosPrecos}
+
+💳 PAGAMENTO:
+${config.regrasPagamento}
+
+⚕️ LIMITES MÉDICOS:
+${config.limitesMedicos}
+
+📋 DADOS PARA AGENDAMENTO:
+${config.dadosAgendamento}
+
+${regrasNegociacao}
+
+🎯 SERVIÇOS COMPLEMENTARES (venda cruzada):
+${config.servicosComplementares}
+
+⚠️ RESTRIÇÕES DE AGENDA:
+${config.restricoesAgenda}
+
+---
+REGRAS GERAIS:
+1. Seja calorosa e profissional
+2. Sempre confirme disponibilidade antes de marcar
+3. Colete dados completos antes de agendar
+4. Use as regras de negociação acima
+5. Nunca prometa descontos além do permitido
+6. Redirecione emergências médicas
+`;
+}
+
+// Supabase functions (standalone)
+async function criarClinica(nome: string, promptBase: string, perfil: string, supabaseUrl: string, supabaseKey: string): Promise<string | null> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { data, error } = await supabase
+    .from('empresas')
+    .insert({
+      nome,
+      prompt_base: promptBase,
+      perfil_negociacao: perfil,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('❌ Erro ao criar clínica:', error.message);
+    return null;
+  }
+
+  return data?.id || null;
+}
+
+async function buscarHistoricoConversa(clienteWaId: string, clinicaId: string, supabaseUrl: string, supabaseKey: string): Promise<Conversa[]> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { data, error } = await supabase
+    .from('conversas')
+    .select('id, cliente_wa_id, clinica_id, role, content, created_at')
+    .eq('cliente_wa_id', clienteWaId)
+    .eq('clinica_id', clinicaId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('❌ Erro ao buscar histórico:', error.message);
+    return [];
+  }
+
+  return data || [];
+}
+
+async function salvarMensagem(clienteWaId: string, clinicaId: string, role: 'user' | 'model', content: string, supabaseUrl: string, supabaseKey: string): Promise<void> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { error } = await supabase
+    .from('conversas')
+    .insert({
+      cliente_wa_id: clienteWaId,
+      clinica_id: clinicaId,
+      role,
+      content,
+    });
+
+  if (error) {
+    console.error('❌ Erro ao salvar mensagem:', error.message);
+  }
 }
 
 const rl = readline.createInterface({

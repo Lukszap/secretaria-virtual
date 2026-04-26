@@ -1,14 +1,73 @@
 import readline from 'readline';
 import { config } from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { listarClinicas, buscarHistoricoConversa, salvarMensagem } from '../apps/api/src/services/supabase.js';
+import { createClient } from '@supabase/supabase-js';
 
 config();
 
+// Types
 interface Clinica {
   id: string;
   nome: string;
   prompt_base: string;
+}
+
+interface Conversa {
+  id: string;
+  cliente_wa_id: string;
+  clinica_id: string;
+  role: 'user' | 'model';
+  content: string;
+  created_at: string;
+}
+
+// Supabase functions (standalone)
+async function listarClinicas(supabaseUrl: string, supabaseKey: string): Promise<Clinica[]> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { data, error } = await supabase
+    .from('empresas')
+    .select('id, nome, prompt_base')
+    .eq('ativo', true);
+
+  if (error) {
+    console.error('❌ Erro ao listar clínicas:', error.message);
+    return [];
+  }
+
+  return data || [];
+}
+
+async function buscarHistoricoConversa(clienteWaId: string, clinicaId: string, supabaseUrl: string, supabaseKey: string): Promise<Conversa[]> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { data, error } = await supabase
+    .from('conversas')
+    .select('id, cliente_wa_id, clinica_id, role, content, created_at')
+    .eq('cliente_wa_id', clienteWaId)
+    .eq('clinica_id', clinicaId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('❌ Erro ao buscar histórico:', error.message);
+    return [];
+  }
+
+  return data || [];
+}
+
+async function salvarMensagem(clienteWaId: string, clinicaId: string, role: 'user' | 'model', content: string, supabaseUrl: string, supabaseKey: string): Promise<void> {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { error } = await supabase
+    .from('conversas')
+    .insert({
+      cliente_wa_id: clienteWaId,
+      clinica_id: clinicaId,
+      role,
+      content,
+    });
+
+  if (error) {
+    console.error('❌ Erro ao salvar mensagem:', error.message);
+  }
 }
 
 const rl = readline.createInterface({
@@ -41,7 +100,7 @@ async function iniciarChat(clinica: Clinica, clienteWaId: string, ehNovo: boolea
   if (historico.length > 0) {
     console.log(`📝 Histórico: ${historico.length} mensagens anteriores\n`);
     const ultimas = historico.slice(-4);
-    ultimas.forEach((msg) => {
+    ultimas.forEach((msg: Conversa) => {
       const prefixo = msg.role === 'user' ? '👤' : '🤖';
       const texto = msg.content.substring(0, 60) + (msg.content.length > 60 ? '...' : '');
       console.log(`${prefixo} ${texto}`);
@@ -52,8 +111,7 @@ async function iniciarChat(clinica: Clinica, clienteWaId: string, ehNovo: boolea
   }
 
   // Preparar histórico para o Gemini
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const history: any[] = historico.map((msg) => ({
+  const history = historico.map((msg: Conversa) => ({
     role: msg.role,
     parts: [{ text: msg.content }],
   }));

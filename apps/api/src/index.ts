@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 
 // Importação das rotas
 import webhookRoutes from './routes/webhook.js';
+import tenantRoutes from './routes/tenant.js';
 
 // Tipos de ambiente do Cloudflare Workers
 type Bindings = {
@@ -34,6 +35,9 @@ app.get('/', (c) => {
 
 // Rotas do Webhook (Meta WhatsApp API)
 app.route('/webhook', webhookRoutes);
+
+// Rotas do Tenant (Configurações)
+app.route('/', tenantRoutes);
 
 // Tratamento de rotas não encontradas
 app.notFound((c) => {

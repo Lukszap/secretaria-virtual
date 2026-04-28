@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { FunctionDeclaration, Tool } from '@google/generative-ai';
 import type { Tenant, Cliente, Conversa, Mensagem, Env, IntencaoCliente, AcaoIA } from '../../../../packages/shared/src/types.js';
+import { notificarDonoAgendamento } from './notificacoes.js';
 
 // =============================================================================
 // TYPES PARA ACTION ENGINE
@@ -11,6 +12,7 @@ export interface ActionResult {
   payload?: Record<string, unknown>;
   executado: boolean;
   erro?: string;
+  aguardando_confirmacao?: boolean;
 }
 
 export interface GeminiResponse {
@@ -26,7 +28,7 @@ export interface GeminiResponse {
 
 const toolAgendarHorario = {
   name: 'agendar_horario',
-  description: 'Agenda um horário para o cliente quando todos os dados necessários foram coletados',
+  description: 'Agenda um horário para o cliente quando todos os dados necessários foram coletados. USE SEMPRE a data no fuso do tenant informado no system prompt. Nunca use UTC.',
   parameters: {
     type: 'object' as const,
     properties: {
@@ -143,6 +145,18 @@ function formatarProfissionais(tenant: Tenant): string {
   }).join('\n');
 }
 
+// =============================================================================
+// FUNÇÃO DE FUSO HORÁRIO
+// =============================================================================
+
+function obterDataHoraLocal(timezone = 'America/Sao_Paulo'): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: timezone,
+    dateStyle: 'full',
+    timeStyle: 'short'
+  }).format(new Date());
+}
+
 function formatarHorarios(tenant: Tenant): string {
   const hor = tenant.configuracoes.horario_funcionamento;
   if (!hor) return '- Horário não configurado';
@@ -182,6 +196,8 @@ ${formatarHorarios(tenant)}
 - Exige sinal Pix: ${regras?.exige_sinal_pix ? 'Sim (' + (regras?.percentual_sinal || 30) + '%)' : 'Não'}
 - Cancelamento com antecedência: ${regras?.cancelamento_antecedencia_horas || 24}h
 - Agendamento máximo antecedência: ${regras?.permite_agendamento_futuro_dias || 60} dias
+- Fuso horário: ${(config as unknown as Record<string, string>).timezone || 'America/Sao_Paulo'}
+- Data/hora atual: ${obterDataHoraLocal((config as unknown as Record<string, string>).timezone)}
 
 🎯 FLUXO DE ATENDIMENTO OBRIGATÓRIO:
 1. SAUDAÇÃO: ${msgs?.saudacao?.replace('{nome_salao}', tenant.nome) || 'Olá! Como posso ajudar?'}
@@ -215,7 +231,7 @@ ${cliente.preferencias?.profissional_favorito ? `- Profissional favorito: ${clie
 `.trim();
 }
 
-// =============================================================================
+// =========================================== ==================================
 // BUSCAR DADOS DO BANCO
 // =============================================================================
 
@@ -323,6 +339,61 @@ async function buscarConversa(
   return data as Conversa;
 }
 
+// =============================================================================
+// FUNÇÃO DE HISTÓRICO INTELIGENTE COM RESUMO
+// =============================================================================
+
+function montarHistoricoInteligente(
+  historico: Mensagem[],
+  dadosColetados: Record<string, unknown>
+): { role: string; parts: { text: string }[] }[] {
+  // Se 10 ou menos mensagens, comportamento atual
+  if (historico.length <= 10) {
+    const history: { role: string; parts: { text: string }[] }[] = [];
+    let lastRole: string | null = null;
+    
+    for (const msg of historico) {
+      if (!msg.conteudo?.trim()) continue;
+      const role = msg.tipo === 'inbound' ? 'user' : 'model';
+      if (role === lastRole) continue;
+      history.push({ role, parts: [{ text: msg.conteudo }] });
+      lastRole = role;
+    }
+    
+    // Garantir que começa com 'user'
+    if (history.length > 0 && history[0]!.role === 'model') {
+      history.shift();
+    }
+    return history;
+  }
+  
+  // Mais de 10 mensagens: usar resumo + últimas 6
+  const ultimas6 = historico.slice(-6);
+  const resumo = `[CONTEXTO DA CONVERSA ATÉ AQUI]
+- Serviço desejado: ${dadosColetados.servico_desejado || 'não definido'}
+- Profissional preferido: ${dadosColetados.profissional_preferido || 'sem preferência'}
+- Nome do cliente: ${dadosColetados.nome_cliente || 'não informado'}
+- Data preferida: ${dadosColetados.data_preferida || 'não definida'}
+[FIM DO CONTEXTO]`;
+  
+  const history: { role: string; parts: { text: string }[] }[] = [];
+  
+  // Primeira mensagem é o resumo (como user)
+  history.push({ role: 'user', parts: [{ text: resumo }] });
+  
+  let lastRole = 'user';
+  
+  for (const msg of ultimas6) {
+    if (!msg.conteudo?.trim()) continue;
+    const role = msg.tipo === 'inbound' ? 'user' : 'model';
+    if (role === lastRole) continue;
+    history.push({ role, parts: [{ text: msg.conteudo }] });
+    lastRole = role;
+  }
+  
+  return history;
+}
+
 async function buscarHistoricoMensagens(
   supabase: SupabaseClient,
   conversaId: string,
@@ -391,6 +462,52 @@ async function atualizarStatusConversa(
 }
 
 // =============================================================================
+// FUNÇÃO DE CÁLCULO DE CONFIANÇA
+// =============================================================================
+
+function calcularConfianca(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  response: any,
+  actionResult: ActionResult | undefined,
+  textoResposta: string
+): number {
+  let confianca = 0.9; // Base
+  
+  // Palavras de incerteza reduzem confiança
+  const palavrasIncerteza = ['não sei', 'talvez', 'não tenho certeza', 'pode ser', 'acho que'];
+  const textoLower = textoResposta.toLowerCase();
+  for (const palavra of palavrasIncerteza) {
+    if (textoLower.includes(palavra)) {
+      confianca -= 0.3;
+      break;
+    }
+  }
+  
+  // Resposta muito curta é suspeita
+  if (textoResposta.length < 20) {
+    confianca -= 0.2;
+  }
+  
+  // Agendamento com payload incompleto
+  if (actionResult?.tipo === 'agendar_horario' && actionResult.payload) {
+    const payload = actionResult.payload;
+    const camposObrigatorios = ['servico', 'data', 'hora', 'nome_cliente'];
+    const camposPresentes = camposObrigatorios.filter(c => payload[c] && String(payload[c]).trim() !== '');
+    if (camposPresentes.length < 4) {
+      confianca -= 0.2;
+    }
+  }
+  
+  // Function call válida e completa aumenta confiança
+  if (actionResult?.tipo && actionResult.payload) {
+    confianca += 0.1;
+  }
+  
+  // Clampear entre 0 e 1
+  return Math.max(0, Math.min(1, confianca));
+}
+
+// =============================================================================
 // MOTOR PRINCIPAL: generateGeminiResponse
 // =============================================================================
 
@@ -442,6 +559,68 @@ export async function generateGeminiResponse(
     };
   }
   
+  // 4.1 VERIFICAR CONFIRMAÇÃO PENDENTE (Problema 1)
+  const dadosPendentes = conversa.dados_coletados?.pendente_confirmacao as Record<string, unknown> | undefined;
+  if ((conversa.status as string) === 'aguardando_confirmacao' && dadosPendentes) {
+    const respostaLower = mensagemCliente.toLowerCase();
+    const confirmou = ['sim', 'confirmo', 'pode', 'confirmar', 'yes'].some(p => respostaLower.includes(p));
+    const negou = ['não', 'nao', 'corrigir', 'errado', 'no', 'mudar'].some(p => respostaLower.includes(p));
+    
+    if (confirmou) {
+      // Cliente confirmou - retornar action para execução
+      await atualizarStatusConversa(supabase, conversa.id, 'bot_active', true);
+      const novosDados = { ...conversa.dados_coletados };
+      delete novosDados.pendente_confirmacao;
+      await atualizarDadosColetados(supabase, conversa.id, novosDados);
+      
+      // Notificar o dono do salão (não bloqueia o fluxo)
+      const configTimezone = (tenant.configuracoes as unknown as Record<string, string>).timezone;
+      const dataFormatada = obterDataHoraLocal(configTimezone);
+      
+      notificarDonoAgendamento(
+        {
+          WHATSAPP_ACCESS_TOKEN: env.WHATSAPP_ACCESS_TOKEN,
+          PHONE_NUMBER_ID: env.PHONE_NUMBER_ID
+        },
+        tenant,
+        {
+          nomeCliente: String(dadosPendentes.nome_cliente || 'Não informado'),
+          telefoneCliente: telefoneCliente,
+          servico: String(dadosPendentes.servico_nome || dadosPendentes.servico || 'Serviço'),
+          profissional: dadosPendentes.profissional_preferencia ? String(dadosPendentes.profissional_preferencia) : undefined,
+          data: dataFormatada,
+          hora: String(dadosPendentes.hora || '--:--'),
+          tenantNome: tenant.nome
+        }
+      ).catch(err => console.error('Erro ao notificar dono:', err));
+      
+      return {
+        texto: `✅ Agendamento confirmado! ${dadosPendentes.servico_nome || dadosPendentes.servico} para ${dadosPendentes.data} às ${dadosPendentes.hora}. Te esperamos! 💕`,
+        action: {
+          tipo: 'agendar_horario',
+          payload: dadosPendentes,
+          executado: true,
+          aguardando_confirmacao: false
+        },
+        intencao: 'agendar_horario',
+        confianca: 1
+      };
+    } else if (negou) {
+      // Cliente negou - limpar pendente e voltar ao fluxo
+      const novosDados = { ...conversa.dados_coletados };
+      delete novosDados.pendente_confirmacao;
+      await atualizarDadosColetados(supabase, conversa.id, novosDados);
+      await atualizarStatusConversa(supabase, conversa.id, 'bot_active', true);
+      
+      return {
+        texto: 'Sem problema! Vamos ajustar. Qual informação você gostaria de corrigir? (serviço, data, hora ou profissional)',
+        intencao: 'correcao_solicitada',
+        confianca: 0.95
+      };
+    }
+    // Se não entendeu a resposta, continua no fluxo normal (Gemini vai responder)
+  }
+  
   // 5. SALVAR MENSAGEM DO CLIENTE
   await salvarMensagem(supabase, {
     tenant_id: tenantId,
@@ -453,40 +632,19 @@ export async function generateGeminiResponse(
     processada_por_ia: false
   });
   
-  // 6. BUSCAR HISTÓRICO (últimas 10 mensagens)
-  const historico = await buscarHistoricoMensagens(supabase, conversa.id, 10);
+  // 6. BUSCAR HISTÓRICO (últimas 20 mensagens para permitir resumo inteligente)
+  const historico = await buscarHistoricoMensagens(supabase, conversa.id, 20);
   
   // 7. CONSTRUIR SYSTEM INSTRUCTION DINÂMICO
   const systemInstruction = buildSystemPrompt(tenant, cliente);
   
-  // 8. MONTAR HISTÓRICO PARA GEMINI
-  // Filtrar apenas mensagens com conteúdo e garantir que comece com 'user'
-  const mensagensValidas = historico.filter(msg => msg.conteudo?.trim());
-  
-  // Gemini exige que histórico comece com 'user' e alterne user/model
-  const history: {role: string, parts: {text: string}[]}[] = [];
-  let lastRole: string | null = null;
-  
-  for (const msg of mensagensValidas) {
-    const role = msg.tipo === 'inbound' ? 'user' : 'model';
-    // Pular se mesma role repetida (agrupar ou pular)
-    if (role === lastRole) {
-      // Se for mesmo role, adiciona ao último conteúdo ou pula
-      continue;
-    }
-    history.push({ role, parts: [{ text: msg.conteudo }] });
-    lastRole = role;
-  }
-  
-  // Se histórico começar com 'model', remover (Gemini exige começar com 'user')
-  if (history.length > 0 && history[0]!.role === 'model') {
-    history.shift();
-  }
+  // 8. MONTAR HISTÓRICO INTELIGENTE PARA GEMINI (Problema 4)
+  const history = montarHistoricoInteligente(historico, conversa.dados_coletados || {});
   
   // 9. INICIALIZAR GEMINI
   const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash', //NUNCA MEXER Na versao CASCADE , só se existir um comando especifico pra isso
+    model: 'gemini-3.1-flash-lite-preview', //NUNCA MEXER Na versao CASCADE , só se existir um comando especifico pra isso
     generationConfig: { temperature: 0.2 },
     systemInstruction,
     tools
@@ -513,11 +671,41 @@ export async function generateGeminiResponse(
     }
     
     if (call.name === 'agendar_horario') {
-      actionResult = {
-        tipo: 'agendar_horario',
-        payload: call.args as Record<string, unknown>,
-        executado: false // Será executado pelo handler externo
-      };
+      const payload = call.args as Record<string, unknown>;
+      
+      // Verificar se tem todos os dados necessários
+      const camposObrigatorios = ['servico', 'data', 'hora', 'nome_cliente'];
+      const temTodosDados = camposObrigatorios.every(c => payload[c] && String(payload[c]).trim() !== '');
+      
+      if (temTodosDados) {
+        // Armazenar em pendente_confirmacao e aguardar confirmação
+        const novosDados = { ...conversa.dados_coletados, pendente_confirmacao: payload };
+        await atualizarDadosColetados(supabase, conversa.id, novosDados);
+        await atualizarStatusConversa(supabase, conversa.id, 'aguardando_confirmacao' as string, true);
+        
+        actionResult = {
+          tipo: 'agendar_horario',
+          payload,
+          executado: false,
+          aguardando_confirmacao: true
+        };
+        
+        // Retornar mensagem de confirmação imediatamente (não passar pelo Gemini)
+        return {
+          texto: `Posso confirmar seu agendamento de ${payload.servico_nome || payload.servico} ${payload.profissional_preferencia ? `com ${payload.profissional_preferencia}` : ''} para ${payload.data} às ${payload.hora}? Responda *sim* para confirmar ou *não* para corrigir.`,
+          action: actionResult,
+          intencao: 'aguardando_confirmacao',
+          confianca: 0.95
+        };
+      } else {
+        // Dados incompletos - apenas armazenar action para execução normal
+        actionResult = {
+          tipo: 'agendar_horario',
+          payload,
+          executado: false,
+          aguardando_confirmacao: false
+        };
+      }
     } else if (call.name === 'chamar_recepcionista_humana') {
       actionResult = {
         tipo: 'chamar_recepcionista_humana',
@@ -592,11 +780,22 @@ export async function generateGeminiResponse(
     console.log('💾 Dados coletados atualizados');
   }
   
+  // 15. CALCULAR CONFIANÇA REAL (Problema 2)
+  const confiancaCalculada = calcularConfianca(response, actionResult, textoResposta);
+  
+  // Fallback para humano se confiança baixa e sem action definida
+  let textoFinal = textoResposta;
+  if (confiancaCalculada < 0.7 && !actionResult) {
+    await atualizarStatusConversa(supabase, conversa.id, 'human_requested', false);
+    textoFinal = 'Vou chamar um atendente para te ajudar melhor. Um momento, por favor... 🤗';
+    console.log('⚠️ Confianca baixa (< 0.7), escalando para humano');
+  }
+  
   const responseData: GeminiResponse = {
-    texto: textoResposta,
+    texto: textoFinal,
     action: actionResult,
     intencao: actionResult?.tipo || 'outro',
-    confianca: 0.9
+    confianca: confiancaCalculada
   };
   return responseData;
 }

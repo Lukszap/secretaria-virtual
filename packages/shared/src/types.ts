@@ -128,6 +128,7 @@ export interface Tenant {
   whatsapp_phone_number_id?: string;
   whatsapp_waba_id?: string;
   whatsapp_access_token_encrypted?: string;
+  whatsapp_dono?: string;  // WhatsApp pessoal do dono para notificações
   
   // Configurações do Negócio
   configuracoes: ConfiguracoesTenant;

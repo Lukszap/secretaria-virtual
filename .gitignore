@@ -1,12 +1,47 @@
-# Environment variables (Cloudflare Workers usa .dev.vars local)
+# =============================================================================
+# SECRETARIA VIRTUAL — .gitignore
+# =============================================================================
+
+# Segredos — NUNCA subir
 .env
+.env.local
+.env.production
 .dev.vars
+*.dev.vars
+wrangler.toml.local
 
-# Dependencies
-node_modules
+# Node
+node_modules/
+.npm/
 
-# Wrangler
-.wrangler
+# Builds gerados
+dist/
+build/
+.cache/
+.turbo/
+.wrangler/
+.cloudflare/
 
-# Build output
-dist
+# Remix
+apps/web/build/
+apps/web/public/build/
+
+# Cloudflare Workers
+apps/api/.wrangler/
+apps/api/dist/
+
+# TypeScript
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editores
+.vscode/settings.json
+.idea/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*

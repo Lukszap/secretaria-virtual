@@ -5,6 +5,9 @@
 -- Nicho: Salões, Barbearias, Clínicas de Estética, Nail Designers
 -- =============================================================================
 
+-- MIGRATIONS (rodar manualmente no Supabase SQL Editor):
+-- ALTER TABLE tenants ADD COLUMN IF NOT EXISTS whatsapp_dono TEXT;
+
 -- =============================================================================
 -- TABELA: TENANTS (Clínicas/Salões)
 -- =============================================================================

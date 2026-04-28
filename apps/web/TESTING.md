@@ -1,5 +1,5 @@
 # Como testar o painel de onboarding
-
+roda `npm run dev` tanto na web quanto no api
 ## Modo mock (sem backend)
 
 1. Certifique-se que `USE_MOCK = true` em `app/lib/mock.ts`

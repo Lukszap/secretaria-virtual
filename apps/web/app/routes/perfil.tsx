@@ -1,77 +1,223 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "@remix-run/react";
-import { Card, CardContent, CardHeader } from "~/components/ui/Card";
 import { Button } from "~/components/ui/Button";
 import { Input } from "~/components/ui/Input";
 import { Select } from "~/components/ui/Select";
 import { Toggle } from "~/components/ui/Toggle";
-import { Step3Profissionais } from "~/components/onboarding/Step3Profissionais";
-import { Step4Servicos } from "~/components/onboarding/Step4Servicos";
-import { atualizarConfiguracoes } from "~/lib/api";
-import { mockTenant, type Configuracoes, type Profissional, type Servico } from "~/lib/mock";
-import { calcularProgressoPerfil } from "~/lib/utils";
+import { SimpleSlider } from "~/components/ui/SimpleSlider";
+import { useLocalStorage, clearAllTestData } from "~/hooks/useLocalStorage";
+import { useModal } from "~/hooks/useModal";
+import { ModalProfissionais } from "~/components/perfil/ModalProfissionais";
+import { ModalServicos } from "~/components/perfil/ModalServicos";
+import { mockTenant } from "~/lib/mock";
+import { calcularProgressoPerfil } from "~/lib/calcularProgresso";
+import type { TenantConfig } from "~/types";
 
-export default function Perfil() {
+const TIMEZONES_BR = [
+  { value: "America/Sao_Paulo", label: "São Paulo (Brasília)" },
+  { value: "America/Rio_de_Janeiro", label: "Rio de Janeiro" },
+  { value: "America/Salvador", label: "Salvador" },
+  { value: "America/Fortaleza", label: "Fortaleza" },
+  { value: "America/Recife", label: "Recife" },
+  { value: "America/Belem", label: "Belém" },
+  { value: "America/Manaus", label: "Manaus" },
+  { value: "America/Cuiaba", label: "Cuiabá" },
+];
+
+export default function PerfilPage() {
   const navigate = useNavigate();
-  const [config, setConfig] = useState<Configuracoes>(mockTenant.configuracoes);
-  const [loading, setLoading] = useState<string | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>("regras");
+  const modal = useModal();
+  const [secaoAberta, setSecaoAberta] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState<string | null>(null);
+  const [salvo, setSalvo] = useState<string | null>(null);
+  
+  const [dados, setDados] = useLocalStorage<TenantConfig>(
+    "tenant_config",
+    {
+      nome: mockTenant.nome,
+      timezone: mockTenant.configuracoes.timezone,
+      whatsapp_phone_number_id: mockTenant.whatsapp_phone_number_id || "",
+      whatsapp_dono: mockTenant.whatsapp_dono || "",
+      regras_negocio: undefined,
+      profissionais: [],
+      catalogo_servicos: [],
+      mensagens_padrao: undefined,
+    }
+  );
 
-  const progresso = calcularProgressoPerfil(config);
+  const { detalhado, total } = calcularProgressoPerfil(dados);
 
-  const handleSave = async (section: string, data: Partial<Configuracoes>) => {
-    setLoading(section);
-    try {
-      await atualizarConfiguracoes("mock-tenant-123", data);
-      setConfig({ ...config, ...data });
-      setSaved(section);
-      setTimeout(() => setSaved(null), 3000);
-    } catch (error) {
-      alert("Erro ao salvar: " + (error instanceof Error ? error.message : "Erro desconhecido"));
-    } finally {
-      setLoading(null);
+  const handleLogout = () => {
+    clearAllTestData();
+    navigate("/");
+  };
+
+  const handleSave = async (secao: string) => {
+    setSalvando(secao);
+    await new Promise(r => setTimeout(r, 500));
+    setSalvando(null);
+    setSalvo(secao);
+    setTimeout(() => setSalvo(null), 2000);
+  };
+
+  const handleSaveModal = (novosDados: TenantConfig) => {
+    setDados(novosDados);
+    modal.fecharModal();
+    setSalvo("modais");
+    setTimeout(() => setSalvo(null), 2000);
+  };
+
+  // Seções que expandem inline
+  const secoesExpandiveis = [
+    { id: "basico", titulo: "Configurações básicas", descricao: "Nome, timezone, WhatsApp", icon: "📋", progresso: detalhado.basico },
+    { id: "regras", titulo: "Regras de negócio", descricao: "Tolerância, sinal, cancelamento", icon: "💰", progresso: detalhado.regras },
+    { id: "mensagens", titulo: "Mensagens personalizadas", descricao: "Saudação, confirmação, etc", icon: "💬", progresso: detalhado.mensagens },
+  ];
+
+  // Seções que abrem modal
+  const secoesModal = [
+    { id: "profissionais", titulo: "Profissionais", descricao: "Adicionar/editar/deletar", icon: "👥", progresso: detalhado.profissionais },
+    { id: "servicos", titulo: "Serviços", descricao: "Adicionar/editar/deletar", icon: "✂️", progresso: detalhado.servicos },
+  ];
+
+  const updateRegras = (novasRegras: Partial<typeof dados.regras_negocio>) => {
+    setDados({
+      ...dados,
+      regras_negocio: { ...dados.regras_negocio, ...novasRegras },
+    });
+  };
+
+  const renderSecaoContent = (secaoId: string) => {
+    switch (secaoId) {
+      case "basico":
+        return (
+          <div className="space-y-4">
+            <Input
+              label="Nome do salão"
+              value={dados.nome}
+              onChange={(e) => setDados({ ...dados, nome: e.target.value })}
+            />
+            <Select
+              label="Timezone"
+              value={dados.timezone}
+              onChange={(e) => setDados({ ...dados, timezone: e.target.value })}
+              options={TIMEZONES_BR}
+            />
+            <Input
+              label="WhatsApp Business (ID)"
+              value={dados.whatsapp_phone_number_id}
+              onChange={(e) => setDados({ ...dados, whatsapp_phone_number_id: e.target.value })}
+              placeholder="Ex: 5511999999999"
+            />
+            <Input
+              label="WhatsApp do Dono"
+              value={dados.whatsapp_dono}
+              onChange={(e) => setDados({ ...dados, whatsapp_dono: e.target.value })}
+              placeholder="Ex: 5511888888888"
+            />
+            <Button onClick={() => handleSave("basico")} loading={salvando === "basico"}>
+              {salvo === "basico" ? "✅ Salvo!" : "Salvar"}
+            </Button>
+          </div>
+        );
+        
+      case "regras":
+        const regras = dados.regras_negocio || {};
+        return (
+          <div className="space-y-4">
+            <Select
+              label="Tolerância de atraso (minutos)"
+              value={regras.tolerancia_atraso_minutos || ""}
+              onChange={(e) => updateRegras({ tolerancia_atraso_minutos: parseInt(e.target.value) || undefined })}
+              options={[
+                { value: "", label: "Selecione..." },
+                { value: 10, label: "10 minutos" },
+                { value: 15, label: "15 minutos" },
+                { value: 20, label: "20 minutos" },
+                { value: 30, label: "30 minutos" },
+              ]}
+            />
+            
+            <Select
+              label="Cancelamento com antecedência (horas)"
+              value={regras.cancelamento_antecedencia_horas || ""}
+              onChange={(e) => updateRegras({ cancelamento_antecedencia_horas: parseInt(e.target.value) || undefined })}
+              options={[
+                { value: "", label: "Selecione..." },
+                { value: 12, label: "12 horas" },
+                { value: 24, label: "24 horas" },
+                { value: 48, label: "48 horas" },
+                { value: 72, label: "72 horas" },
+              ]}
+            />
+
+            <Toggle
+              checked={regras.exige_sinal_pix || false}
+              onChange={(checked) => updateRegras({ exige_sinal_pix: checked })}
+              label="Exige sinal via Pix?"
+            />
+            
+            {regras.exige_sinal_pix && (
+              <SimpleSlider
+                label="Percentual de sinal"
+                value={regras.percentual_sinal || 30}
+                onChange={(value) => updateRegras({ percentual_sinal: value })}
+                min={0}
+                max={100}
+              />
+            )}
+
+            <Button onClick={() => handleSave("regras")} loading={salvando === "regras"}>
+              {salvo === "regras" ? "✅ Salvo!" : "Salvar"}
+            </Button>
+          </div>
+        );
+
+      case "mensagens":
+        const mensagens = dados.mensagens_padrao || {};
+        const campos = [
+          { key: "saudacao", label: "Saudação da IA" },
+          { key: "confirmacao_agendamento", label: "Confirmação de Agendamento" },
+          { key: "lembrete", label: "Lembrete" },
+        ];
+        return (
+          <div className="space-y-4">
+            {campos.map((campo) => (
+              <div key={campo.key}>
+                <label className="block text-sm font-medium mb-2">{campo.label}</label>
+                <textarea
+                  value={mensagens[campo.key as keyof typeof mensagens] || ""}
+                  onChange={(e) => setDados({
+                    ...dados,
+                    mensagens_padrao: { ...mensagens, [campo.key]: e.target.value },
+                  })}
+                  rows={2}
+                  className="w-full px-4 py-3 border-2 border-stone-200 rounded-xl focus:outline-none focus:border-terracotta-500"
+                  placeholder={`Digite a mensagem de ${campo.label.toLowerCase()}...`}
+                />
+              </div>
+            ))}
+            <Button onClick={() => handleSave("mensagens")} loading={salvando === "mensagens"}>
+              {salvo === "mensagens" ? "✅ Salvo!" : "Salvar"}
+            </Button>
+          </div>
+        );
+        
+      default:
+        return null;
     }
   };
 
-  const toggleSection = (section: string) => {
-    setExpanded(expanded === section ? null : section);
+  const StatusIcon = ({ progresso }: { progresso: number }) => {
+    if (progresso === 100) return <span className="text-xl">✅</span>;
+    if (progresso === 0) return <span className="text-xl">❌</span>;
+    return <span className="text-xl">⏳</span>;
   };
-
-  const mensagensPadrao = {
-    saudacao: "Olá! Sou a assistente virtual do {nome_salao}. Como posso te ajudar hoje? 💅",
-    confirmacao_agendamento: "Seu agendamento foi confirmado! Te esperamos no dia {data} às {hora}. ✨",
-    lembrete: "Lembrete: Você tem um agendamento amanhã às {hora}. Nos vemos lá! 💖",
-    fallback_ia: "Só um minutinho, estou processando sua mensagem... ⏳",
-  };
-
-  const sections = [
-    {
-      id: "regras",
-      title: "Regras do Negócio",
-      badge: config.regras_negocio ? "Completo" : "Pendente",
-    },
-    {
-      id: "mensagens",
-      title: "Mensagens Personalizadas",
-      badge: Object.values(config.mensagens_padrao || {}).every(m => m && m !== "") ? "Completo" : "Pendente",
-    },
-    {
-      id: "profissionais",
-      title: "Mais Profissionais",
-      badge: config.profissionais.length > 0 ? "Completo" : "Pendente",
-    },
-    {
-      id: "servicos",
-      title: "Mais Serviços",
-      badge: config.catalogo_servicos.length > 0 ? "Completo" : "Pendente",
-    },
-  ];
 
   return (
-    <div className="min-h-screen bg-gradient-mesh">
+    <div className="min-h-screen bg-stone-50">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-stone-200 sticky top-0 z-10">
+      <header className="bg-white border-b border-stone-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
@@ -80,378 +226,140 @@ export default function Perfil() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </Button>
-              <h1 className="font-display font-semibold text-stone-800">
-                Complete seu Perfil
-              </h1>
+              <h1 className="font-display font-semibold text-stone-800">Complete seu Perfil</h1>
             </div>
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
+              <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Sair
+            </Button>
           </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Progress Bar */}
+        <h1 className="text-3xl font-display mb-2">Complete seu Perfil</h1>
+        <p className="text-stone-600 mb-6">
+          Preencha as informações para melhorar o atendimento
+        </p>
+
+        {/* Progress bar */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-stone-700">
-              Progresso do perfil
-            </span>
-            <span className="text-sm font-medium text-terracotta-600">
-              {progresso}%
-            </span>
+          <div className="flex justify-between mb-2">
+            <span className="text-sm font-medium text-stone-700">Progresso geral</span>
+            <span className="text-sm font-medium text-terracotta-600">{total}%</span>
           </div>
-          <div className="h-3 bg-stone-200 rounded-full overflow-hidden">
+          <div className="w-full bg-stone-200 rounded-full h-2">
             <div
-              className="h-full bg-gradient-to-r from-terracotta-500 to-terracotta-600 transition-all duration-500"
-              style={{ width: `${progresso}%` }}
+              className="bg-terracotta-500 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${total}%` }}
             />
           </div>
         </div>
 
-        {/* Sections */}
-        <div className="space-y-4">
-          {/* Regras do Negócio */}
-          <Card>
-            <button
-              onClick={() => toggleSection("regras")}
-              className="w-full flex items-center justify-between p-6"
+        {/* Seções expandíveis */}
+        <div className="space-y-3">
+          {secoesExpandiveis.map((secao) => (
+            <div
+              key={secao.id}
+              className={`bg-white rounded-xl border transition-all ${
+                secaoAberta === secao.id 
+                  ? "border-terracotta-300 shadow-md" 
+                  : "border-stone-200 hover:border-terracotta-300"
+              }`}
             >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">📋</span>
-                <div className="text-left">
-                  <h3 className="font-display font-medium text-stone-800">
-                    Regras do Negócio
-                  </h3>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  config.regras_negocio ? "bg-sage-100 text-sage-700" : "bg-amber-100 text-amber-700"
-                }`}>
-                  {config.regras_negocio ? "Completo" : "Pendente"}
-                </span>
-                <svg
-                  className={`w-5 h-5 text-stone-400 transition-transform ${
-                    expanded === "regras" ? "rotate-180" : ""
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </button>
-            {expanded === "regras" && (
-              <CardContent className="border-t border-stone-100 pt-6">
-                <div className="grid md:grid-cols-2 gap-6">
-                  <Select
-                    label="Tolerância de atraso"
-                    value={config.regras_negocio?.tolerancia_atraso_minutos || 15}
-                    onChange={(e) => setConfig({
-                      ...config,
-                      regras_negocio: {
-                        ...config.regras_negocio,
-                        tolerancia_atraso_minutos: parseInt(e.target.value),
-                      },
-                    })}
-                    options={[
-                      { label: "10 minutos", value: 10 },
-                      { label: "15 minutos", value: 15 },
-                      { label: "20 minutos", value: 20 },
-                      { label: "30 minutos", value: 30 },
-                    ]}
-                  />
-                  <Select
-                    label="Cancelamento com antecedência"
-                    value={config.regras_negocio?.cancelamento_antecedencia_horas || 24}
-                    onChange={(e) => setConfig({
-                      ...config,
-                      regras_negocio: {
-                        ...config.regras_negocio,
-                        cancelamento_antecedencia_horas: parseInt(e.target.value),
-                      },
-                    })}
-                    options={[
-                      { label: "12 horas", value: 12 },
-                      { label: "24 horas", value: 24 },
-                      { label: "48 horas", value: 48 },
-                      { label: "72 horas", value: 72 },
-                    ]}
-                  />
-                  <div>
-                    <Toggle
-                      checked={config.regras_negocio?.exige_sinal_pix || false}
-                      onChange={(checked) => setConfig({
-                        ...config,
-                        regras_negocio: {
-                          ...config.regras_negocio,
-                          exige_sinal_pix: checked,
-                        },
-                      })}
-                      label="Exige sinal via Pix?"
-                      description="O cliente precisa pagar um sinal para confirmar o agendamento"
-                    />
-                    {config.regras_negocio?.exige_sinal_pix && (
-                      <div className="mt-4">
-                        <label className="block text-sm text-stone-600 mb-2">
-                          Percentual do sinal: {config.regras_negocio?.percentual_sinal || 30}%
-                        </label>
-                        <input
-                          type="range"
-                          min="10"
-                          max="50"
-                          value={config.regras_negocio?.percentual_sinal || 30}
-                          onChange={(e) => setConfig({
-                            ...config,
-                            regras_negocio: {
-                              ...config.regras_negocio,
-                              percentual_sinal: parseInt(e.target.value),
-                            },
-                          })}
-                          className="w-full"
-                        />
-                      </div>
-                    )}
+              <button
+                onClick={() => setSecaoAberta(secaoAberta === secao.id ? null : secao.id)}
+                className="w-full p-4 text-left"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{secao.icon}</span>
+                    <div>
+                      <h3 className="font-medium text-stone-800">{secao.titulo}</h3>
+                      <p className="text-sm text-stone-500">{secao.descricao}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-sm font-medium ${
+                      secao.progresso === 100 ? "text-sage-600" : "text-stone-600"
+                    }`}>
+                      {secao.progresso}%
+                    </span>
+                    <StatusIcon progresso={secao.progresso} />
+                    <svg 
+                      className={`w-5 h-5 text-stone-400 transition-transform ${
+                        secaoAberta === secao.id ? "rotate-180" : ""
+                      }`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </div>
                 </div>
-                <div className="mt-6 flex justify-end">
-                  <Button
-                    onClick={() => handleSave("regras", { regras_negocio: config.regras_negocio })}
-                    loading={loading === "regras"}
-                  >
-                    {saved === "regras" ? (
-                      <>
-                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Salvo!
-                      </>
-                    ) : (
-                      "Salvar Regras"
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            )}
-          </Card>
+              </button>
 
-          {/* Mensagens Personalizadas */}
-          <Card>
-            <button
-              onClick={() => toggleSection("mensagens")}
-              className="w-full flex items-center justify-between p-6"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">💬</span>
-                <div className="text-left">
-                  <h3 className="font-display font-medium text-stone-800">
-                    Mensagens Personalizadas
-                  </h3>
+              {secaoAberta === secao.id && (
+                <div className="px-4 pb-4 border-t border-stone-100">
+                  <div className="pt-4">
+                    {renderSecaoContent(secao.id)}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  Object.values(config.mensagens_padrao || {}).every(m => m && m !== "")
-                    ? "bg-sage-100 text-sage-700" : "bg-amber-100 text-amber-700"
-                }`}>
-                  {Object.values(config.mensagens_padrao || {}).every(m => m && m !== "") ? "Completo" : "Pendente"}
-                </span>
-                <svg
-                  className={`w-5 h-5 text-stone-400 transition-transform ${
-                    expanded === "mensagens" ? "rotate-180" : ""
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+              )}
+            </div>
+          ))}
+
+          {/* Seções com modal */}
+          {secoesModal.map((secao) => (
+            <button
+              key={secao.id}
+              onClick={() => modal.abrirModal(secao.id)}
+              className="w-full p-4 bg-white rounded-xl border border-stone-200 hover:border-terracotta-300 transition-all text-left"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{secao.icon}</span>
+                  <div>
+                    <h3 className="font-medium text-stone-800">{secao.titulo}</h3>
+                    <p className="text-sm text-stone-500">{secao.descricao}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-sm font-medium ${
+                    secao.progresso === 100 ? "text-sage-600" : "text-stone-600"
+                  }`}>
+                    {secao.progresso}%
+                  </span>
+                  <StatusIcon progresso={secao.progresso} />
+                  <svg className="w-5 h-5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
               </div>
             </button>
-            {expanded === "mensagens" && (
-              <CardContent className="border-t border-stone-100 pt-6">
-                <div className="space-y-4">
-                  {[
-                    { key: "saudacao", label: "Saudação da IA", placeholder: mensagensPadrao.saudacao },
-                    { key: "confirmacao_agendamento", label: "Confirmação de Agendamento", placeholder: mensagensPadrao.confirmacao_agendamento },
-                    { key: "lembrete", label: "Lembrete", placeholder: mensagensPadrao.lembrete },
-                    { key: "fallback_ia", label: "Fallback (quando não entendeu)", placeholder: mensagensPadrao.fallback_ia },
-                  ].map((msg) => (
-                    <div key={msg.key}>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-medium text-stone-700">
-                          {msg.label}
-                        </label>
-                        <button
-                          onClick={() => setConfig({
-                            ...config,
-                            mensagens_padrao: {
-                              ...config.mensagens_padrao,
-                              [msg.key]: msg.placeholder,
-                            },
-                          })}
-                          className="text-xs text-terracotta-600 hover:text-terracotta-700"
-                        >
-                          Usar padrão
-                        </button>
-                      </div>
-                      <textarea
-                        value={config.mensagens_padrao?.[msg.key as keyof typeof config.mensagens_padrao] || ""}
-                        onChange={(e) => setConfig({
-                          ...config,
-                          mensagens_padrao: {
-                            ...config.mensagens_padrao,
-                            [msg.key]: e.target.value,
-                          },
-                        })}
-                        placeholder={msg.placeholder}
-                        rows={3}
-                        className="w-full px-4 py-3 border-2 border-stone-200 rounded-xl focus:outline-none focus:border-terracotta-500"
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-6 flex justify-end">
-                  <Button
-                    onClick={() => handleSave("mensagens", { mensagens_padrao: config.mensagens_padrao })}
-                    loading={loading === "mensagens"}
-                  >
-                    {saved === "mensagens" ? (
-                      <>
-                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Salvo!
-                      </>
-                    ) : (
-                      "Salvar Mensagens"
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            )}
-          </Card>
-
-          {/* Profissionais */}
-          <Card>
-            <button
-              onClick={() => toggleSection("profissionais")}
-              className="w-full flex items-center justify-between p-6"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">👩‍💼</span>
-                <div className="text-left">
-                  <h3 className="font-display font-medium text-stone-800">
-                    Mais Profissionais
-                  </h3>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  config.profissionais.length > 0 ? "bg-sage-100 text-sage-700" : "bg-amber-100 text-amber-700"
-                }`}>
-                  {config.profissionais.length > 0 ? "Completo" : "Pendente"}
-                </span>
-                <svg
-                  className={`w-5 h-5 text-stone-400 transition-transform ${
-                    expanded === "profissionais" ? "rotate-180" : ""
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </button>
-            {expanded === "profissionais" && (
-              <CardContent className="border-t border-stone-100 pt-6">
-                <Step3Profissionais
-                  profissionais={config.profissionais}
-                  onChange={(profissionais) => setConfig({ ...config, profissionais })}
-                />
-                <div className="mt-6 flex justify-end">
-                  <Button
-                    onClick={() => handleSave("profissionais", { profissionais: config.profissionais })}
-                    loading={loading === "profissionais"}
-                  >
-                    {saved === "profissionais" ? (
-                      <>
-                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Salvo!
-                      </>
-                    ) : (
-                      "Salvar Profissionais"
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            )}
-          </Card>
-
-          {/* Serviços */}
-          <Card>
-            <button
-              onClick={() => toggleSection("servicos")}
-              className="w-full flex items-center justify-between p-6"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">✂️</span>
-                <div className="text-left">
-                  <h3 className="font-display font-medium text-stone-800">
-                    Mais Serviços
-                  </h3>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  config.catalogo_servicos.length > 0 ? "bg-sage-100 text-sage-700" : "bg-amber-100 text-amber-700"
-                }`}>
-                  {config.catalogo_servicos.length > 0 ? "Completo" : "Pendente"}
-                </span>
-                <svg
-                  className={`w-5 h-5 text-stone-400 transition-transform ${
-                    expanded === "servicos" ? "rotate-180" : ""
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </button>
-            {expanded === "servicos" && (
-              <CardContent className="border-t border-stone-100 pt-6">
-                <Step4Servicos
-                  servicos={config.catalogo_servicos}
-                  profissionais={config.profissionais}
-                  onChange={(catalogo_servicos) => setConfig({ ...config, catalogo_servicos })}
-                />
-                <div className="mt-6 flex justify-end">
-                  <Button
-                    onClick={() => handleSave("servicos", { catalogo_servicos: config.catalogo_servicos })}
-                    loading={loading === "servicos"}
-                  >
-                    {saved === "servicos" ? (
-                      <>
-                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Salvo!
-                      </>
-                    ) : (
-                      "Salvar Serviços"
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            )}
-          </Card>
+          ))}
         </div>
       </main>
+
+      {/* Modais */}
+      {modal.isOpen('profissionais') && (
+        <ModalProfissionais
+          dados={dados}
+          onClose={() => modal.fecharModal()}
+          onSave={handleSaveModal}
+        />
+      )}
+
+      {modal.isOpen('servicos') && (
+        <ModalServicos
+          dados={dados}
+          onClose={() => modal.fecharModal()}
+          onSave={handleSaveModal}
+        />
+      )}
     </div>
   );
 }

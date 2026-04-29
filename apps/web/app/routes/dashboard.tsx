@@ -4,9 +4,13 @@ import { Card, CardContent, CardHeader } from "~/components/ui/Card";
 import { Button } from "~/components/ui/Button";
 import { mockTenant, type Profissional, type Servico, type Tenant } from "~/lib/mock";
 import { obterTenant } from "~/lib/api";
+import { useLocalStorage, clearAllTestData } from "~/hooks/useLocalStorage";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  // TODO: remover quando USE_MOCK = false - modo de dados mock vs real
+  const [dataMode, setDataMode] = useLocalStorage<"mock" | "real">("data_mode", "mock");
+  const [showTestModeModal, setShowTestModeModal] = useState(false);
   const [tenant, setTenant] = useState<Tenant>(mockTenant);
   const [loading, setLoading] = useState(true);
 
@@ -37,8 +41,8 @@ export default function Dashboard() {
 
   const quickActions = [
     { label: "Novo Agendamento", icon: "➕", onClick: () => {} },
-    { label: "Gerenciar Profissionais", icon: "👥", onClick: () => navigate("/perfil") },
-    { label: "Configurar Serviços", icon: "⚙️", onClick: () => navigate("/perfil") },
+    { label: "Gerenciar Profissionais", icon: "👥", onClick: () => navigate("/perfil/profissionais") },
+    { label: "Configurar Serviços", icon: "⚙️", onClick: () => navigate("/perfil/servicos") },
     { label: "Ver Calendário", icon: "📅", onClick: () => {} },
   ];
 
@@ -77,6 +81,7 @@ export default function Dashboard() {
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate("/perfil")}
+                title="Configurações"
               >
                 <svg
                   className="w-5 h-5"
@@ -96,6 +101,19 @@ export default function Dashboard() {
                     strokeWidth={2}
                     d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                   />
+                </svg>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  clearAllTestData();
+                  navigate("/onboarding");
+                }}
+                title="Sair"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
               </Button>
             </div>
@@ -218,7 +236,123 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Footer - Test Mode Controls */}
+        <footer className="mt-12 pt-6 border-t border-stone-200">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setShowTestModeModal(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-stone-100 hover:bg-stone-200 rounded-lg text-sm text-stone-600 transition-colors"
+              >
+                <span>🧪</span>
+                <span>Modo: {dataMode === "mock" ? "Mock" : "Real"}</span>
+              </button>
+              
+              <button
+                onClick={() => {
+                  clearAllTestData();
+                  window.location.reload();
+                }}
+                className="flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 rounded-lg text-sm text-red-600 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span>Limpar dados de teste</span>
+              </button>
+            </div>
+            
+            <p className="text-xs text-stone-400">
+              Secretaria Virtual v0.1.0
+            </p>
+          </div>
+        </footer>
       </main>
+
+      {/* Test Mode Modal */}
+      {showTestModeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6">
+            <h3 className="text-lg font-display font-semibold text-stone-800 mb-4">
+              🧪 Modo de Teste
+            </h3>
+            <p className="text-sm text-stone-600 mb-6">
+              Escolha como os dados devem ser carregados:
+            </p>
+            
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setDataMode("mock");
+                  setShowTestModeModal(false);
+                  window.location.reload();
+                }}
+                className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                  dataMode === "mock" 
+                    ? "border-terracotta-500 bg-terracotta-50" 
+                    : "border-stone-200 hover:border-terracotta-300"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📦</span>
+                  <div>
+                    <p className="font-medium text-stone-800">Dados Mockados</p>
+                    <p className="text-xs text-stone-500">Usar dados de exemplo para testes</p>
+                  </div>
+                </div>
+              </button>
+              
+              <button
+                onClick={() => {
+                  setDataMode("real");
+                  setShowTestModeModal(false);
+                  window.location.reload();
+                }}
+                className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+                  dataMode === "real" 
+                    ? "border-sage-500 bg-sage-50" 
+                    : "border-stone-200 hover:border-sage-300"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🌐</span>
+                  <div>
+                    <p className="font-medium text-stone-800">Carregar da API</p>
+                    <p className="text-xs text-stone-500">Buscar dados do servidor (quando disponível)</p>
+                  </div>
+                </div>
+              </button>
+              
+              <button
+                onClick={() => {
+                  // TODO: remover quando USE_MOCK = false - modo edição manual
+                  const editableMock = { ...mockTenant, nome: mockTenant.nome + " (Editável)" };
+                  localStorage.setItem("manual_tenant_data", JSON.stringify(editableMock));
+                  setShowTestModeModal(false);
+                  alert("Dados copiados para localStorage. Edite em 'manual_tenant_data'");
+                }}
+                className="w-full p-4 rounded-xl border-2 border-stone-200 hover:border-amber-300 text-left transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">✏️</span>
+                  <div>
+                    <p className="font-medium text-stone-800">Editar Manualmente</p>
+                    <p className="text-xs text-stone-500">Copiar mock e salvar em localStorage</p>
+                  </div>
+                </div>
+              </button>
+            </div>
+            
+            <button
+              onClick={() => setShowTestModeModal(false)}
+              className="w-full mt-4 py-2 text-sm text-stone-500 hover:text-stone-700"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

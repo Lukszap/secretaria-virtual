@@ -276,6 +276,12 @@ export default function Onboarding() {
           <Button variant="primary" size="lg" onClick={goToDashboard} fullWidth>
             Ir para o painel
           </Button>
+          <button
+            onClick={() => navigate("/onboarding/escolher-modo")}
+            className="mt-4 text-sm text-stone-500 hover:text-terracotta-600 underline"
+          >
+            Trocar modo de configuração
+          </button>
         </div>
       </div>
     );
@@ -352,6 +358,16 @@ export default function Onboarding() {
             />
           )}
         </StepWrapper>
+        
+        {/* Footer - Trocar modo */}
+        <footer className="mt-8 text-center">
+          <button
+            onClick={() => navigate("/onboarding/escolher-modo")}
+            className="text-sm text-stone-500 hover:text-terracotta-600 underline"
+          >
+            Trocar modo de configuração
+          </button>
+        </footer>
       </div>
     </div>
   );

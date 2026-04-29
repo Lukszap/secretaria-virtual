@@ -17,6 +17,7 @@ export const links: LinksFunction = () => [
     href: "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Crimson+Pro:ital,wght@0,400;0,500;0,600;1,400&family=Source+Sans+3:wght@400;500;600&display=swap",
   },
   { rel: "stylesheet", href: styles },
+  { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
 ];
 
 export default function App() {

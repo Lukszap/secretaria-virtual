@@ -8,6 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 # Variáveis públicas (não secretas) podem ir aqui
+TENANT_ID = "demo-tenant"
 # META_VERIFY_TOKEN e outras secrets devem ser configuradas via:
 # wrangler secret put META_VERIFY_TOKEN
 

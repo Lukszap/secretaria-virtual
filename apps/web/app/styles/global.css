@@ -73,6 +73,7 @@
       transparent
     );
     transition: left 0.5s;
+    pointer-events: none;
   }
   
   .shine:hover::after {

@@ -104,10 +104,10 @@ export function getHorariosPadrao() {
 
 // Calcula progresso do perfil baseado em campos preenchidos
 export function calcularProgressoPerfil(config: {
-  regras_negocio?: Record<string, unknown>;
-  mensagens_padrao?: Record<string, unknown>;
-  profissionais?: unknown[];
-  catalogo_servicos?: unknown[];
+  regras_negocio?: any;
+  mensagens_padrao?: any;
+  profissionais?: any[];
+  catalogo_servicos?: any[];
 }): number {
   let total = 0;
   let preenchidos = 0;

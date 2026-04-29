@@ -1,6 +1,9 @@
 // Flag de controle
 export const USE_MOCK = true; // mudar para false quando backend estiver pronto
 
+// Storage para dados reais em modo mock
+let mockTenants: Record<string, Tenant> = {};
+
 // Types
 export interface Servico {
   nome: string;
@@ -152,7 +155,9 @@ export const mockDelay = (ms = 600) =>
 export const mockApi = {
   criarTenant: async (dados: Partial<Tenant>): Promise<Tenant> => {
     await mockDelay();
-    return { ...mockTenant, ...dados };
+    const newTenant = { ...mockTenant, ...dados };
+    mockTenants[newTenant.id] = newTenant;
+    return newTenant;
   },
   atualizarConfiguracoes: async (
     tenantId: string,
@@ -174,6 +179,9 @@ export const mockApi = {
   },
   obterTenant: async (tenantId: string): Promise<Tenant> => {
     await mockDelay();
+    if (mockTenants[tenantId]) {
+      return mockTenants[tenantId];
+    }
     return mockTenant;
   },
 };

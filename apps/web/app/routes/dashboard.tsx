@@ -1,12 +1,32 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "@remix-run/react";
 import { Card, CardContent, CardHeader } from "~/components/ui/Card";
 import { Button } from "~/components/ui/Button";
-import { mockTenant, type Profissional, type Servico } from "~/lib/mock";
+import { mockTenant, type Profissional, type Servico, type Tenant } from "~/lib/mock";
+import { obterTenant } from "~/lib/api";
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const tenant = mockTenant; // In real app, fetch from API
+  const [tenant, setTenant] = useState<Tenant>(mockTenant);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadTenant = async () => {
+      try {
+        const tenantId = localStorage.getItem("tenant_id");
+        if (tenantId) {
+          const tenantData = await obterTenant(tenantId);
+          setTenant(tenantData);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar tenant:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTenant();
+  }, []);
 
   const stats = [
     { label: "Agendamentos Hoje", value: "8", icon: "📅" },
@@ -21,6 +41,19 @@ export default function Dashboard() {
     { label: "Configurar Serviços", icon: "⚙️", onClick: () => navigate("/perfil") },
     { label: "Ver Calendário", icon: "📅", onClick: () => {} },
   ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-mesh flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-terracotta-500 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <span className="text-white text-2xl">✨</span>
+          </div>
+          <p className="text-stone-600">Carregando seu painel...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-mesh">

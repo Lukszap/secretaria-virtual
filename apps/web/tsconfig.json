@@ -8,6 +8,7 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "isolatedModules": true,
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
@@ -20,6 +21,7 @@
     "paths": {
       "~/*": ["./app/*"]
     },
-    "noEmit": true
+    "noEmit": true,
+    "types": ["@types/react", "@types/react-dom"]
   }
 }

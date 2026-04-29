@@ -27,6 +27,6 @@
     "dotenv": "^17.4.2",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
-    "wrangler": "^4.85.0"
+    "wrangler": "^4.86.0"
   }
 }
